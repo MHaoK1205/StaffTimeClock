@@ -1,0 +1,802 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Staff Time Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: one centered column. Header carries the live clock and tabs; "My day" is a punch card (status, button, remark) above a dated history; "Team" is a date-filtered board for managers. */
+:root {
+  --bg: #eef2f4;
+  --surface: #ffffff;
+  --ink: #12202a;
+  --muted: #566772;
+  --line: #d6dee3;
+  --accent: #0d6b57;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcf0e9;
+  --warn: #9a4a06;
+  --warn-soft: #fbe9d5;
+  --off-soft: #e4eaee;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d151b;
+    --surface: #152029;
+    --ink: #e4ecf0;
+    --muted: #92a4af;
+    --line: #28363f;
+    --accent: #3fcf9f;
+    --accent-ink: #06231a;
+    --accent-soft: #123a2f;
+    --warn: #f0a560;
+    --warn-soft: #3a2713;
+    --off-soft: #1f2d37;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d151b;
+  --surface: #152029;
+  --ink: #e4ecf0;
+  --muted: #92a4af;
+  --line: #28363f;
+  --accent: #3fcf9f;
+  --accent-ink: #06231a;
+  --accent-soft: #123a2f;
+  --warn: #f0a560;
+  --warn-soft: #3a2713;
+  --off-soft: #1f2d37;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-inline: 16px;
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 720px; margin-inline: auto; display: flex; flex-direction: column; gap: 16px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding-block: 8px; }
+h1 { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.now { display: flex; flex-direction: column; gap: 0; }
+.now-time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: clamp(2.4rem, 9vw, 3.4rem); font-weight: 500; line-height: 1.05; letter-spacing: -0.02em; }
+.now-date { color: var(--muted); font-size: 0.95rem; }
+
+.tabs { display: flex; gap: 4px; background: var(--off-soft); padding: 4px; border-radius: 10px; }
+.tab { font: inherit; font-weight: 500; color: var(--muted); background: transparent; border: 0; padding: 8px 16px; border-radius: 7px; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.banner { padding: 10px 14px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-weight: 500; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+.status-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; font-weight: 600; font-size: 0.9rem; background: var(--off-soft); color: var(--muted); }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill.working { background: var(--accent-soft); color: var(--accent); }
+.worked { display: flex; flex-direction: column; align-items: flex-end; }
+.worked-label { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.worked-val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.35rem; font-weight: 500; }
+
+.punch { font: inherit; font-size: 1.15rem; font-weight: 600; width: 100%; padding: 16px 20px; border-radius: 10px; border: 0; cursor: pointer; background: var(--accent); color: var(--accent-ink); }
+.punch.out { background: var(--ink); color: var(--bg); }
+.punch:disabled { opacity: 0.45; cursor: not-allowed; }
+
+label.field { font-weight: 600; display: block; margin-bottom: 6px; }
+textarea { width: 100%; min-height: 110px; resize: vertical; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+textarea:disabled { opacity: 0.6; }
+.remark-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 8px; min-height: 36px; }
+.remark-msg { font-size: 0.9rem; color: var(--muted); }
+.remark-msg.err { color: var(--warn); font-weight: 500; }
+.btn { font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+h2 { margin: 0; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.history { display: flex; flex-direction: column; }
+.entry { display: grid; gap: 2px; padding-block: 14px; border-top: 1px solid var(--line); }
+.entry:first-of-type { border-top: 0; }
+.entry-top { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
+.entry-times { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.entry-remark { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; margin-top: 4px; }
+.entry-remark.none { color: var(--muted); font-style: italic; }
+.empty { color: var(--muted); padding-block: 8px; }
+
+.team-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.team-bar input[type="date"] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; }
+th { text-align: left; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.remark-cell { min-width: 200px; white-space: pre-wrap; overflow-wrap: anywhere; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+
+.name-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.name-row select { flex: 1 1 200px; min-width: 0; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; }
+.name-row select:disabled { opacity: 0.6; }
+.name-set { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; font-weight: 600; font-size: 1.05rem; align-self: center; }
+.roster-box { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 16px; }
+.roster-item { display: flex; align-items: center; gap: 10px; padding-block: 8px; border-top: 1px solid var(--line); }
+.roster-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.export-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-top: 4px; }
+.export-row label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.9rem; }
+.export-row input[type="date"], .export-row input[type="month"], .export-row select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+.export-msg { font-size: 0.9rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.export-msg.err { color: var(--warn); font-weight: 500; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .punch, .tab, .btn { transition: opacity 0.15s ease, background 0.15s ease; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="now">
+      <h1>Staff Time Clock</h1>
+      <div class="now-time" id="now-time">--:--:--</div>
+      <div class="now-date" id="now-date"></div>
+    </div>
+    <div class="tabs" role="tablist" id="tabs" hidden>
+      <button class="tab" role="tab" id="tab-mine" aria-selected="true" type="button">My day</button>
+      <button class="tab" role="tab" id="tab-team" aria-selected="false" type="button">Team</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main id="view-mine" class="wrap" style="gap:16px">
+    <section class="card" aria-label="Today">
+      <div>
+        <label class="field" for="name-pick">Your name</label>
+        <div class="name-row" id="name-pick-row">
+          <select id="name-pick" disabled><option value="">Choose your name…</option></select>
+          <button class="btn" id="save-name" type="button" disabled>Confirm name</button>
+        </div>
+        <div class="name-row" id="name-set-row" hidden>
+          <span class="name-set" id="name-set"></span>
+          <button class="btn" id="change-name" type="button" disabled>Change</button>
+        </div>
+        <span class="export-msg" id="name-msg" role="status"></span>
+      </div>
+      <div class="status-row">
+        <span class="pill" id="status">Connecting…</span>
+        <div class="worked">
+          <span class="worked-label">Worked today</span>
+          <span class="worked-val" id="worked">0h 00m</span>
+        </div>
+      </div>
+      <button class="punch" id="punch" type="button" disabled>Clock in</button>
+      <div>
+        <label class="field" for="remark" id="remark-label">What did you work on today?</label>
+        <textarea id="remark" placeholder="e.g. Finished the delivery schedule for Block C, followed up with two suppliers" disabled></textarea>
+        <div class="remark-foot">
+          <span class="remark-msg" id="remark-msg">Required before you clock out.</span>
+          <button class="btn" id="save-remark" type="button" disabled>Save remark</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Recent days">
+      <div class="card-head">
+        <h2>Recent days</h2>
+        <div class="export-row" id="export-mine-row" hidden>
+          <label for="export-mine-month">Month <input type="month" id="export-mine-month"></label>
+          <button class="btn" id="export-mine" type="button">Export to Excel</button>
+        </div>
+      </div>
+      <span class="export-msg" id="export-mine-msg" role="status"></span>
+      <div class="history" id="history">
+        <div class="empty">Your clocked days will appear here after your first clock in.</div>
+      </div>
+    </section>
+  </main>
+
+  <section id="view-team" class="card" hidden aria-label="Team">
+    <div class="team-bar">
+      <div>
+        <h2>Team board</h2>
+        <div class="muted" id="team-summary">Loading…</div>
+      </div>
+      <input type="date" id="team-date" aria-label="Date">
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Employee</th><th>Status</th><th>In</th><th>Out</th><th>Hours</th><th>Remark</th></tr>
+        </thead>
+        <tbody id="team-body">
+          <tr><td colspan="6" class="muted">People show up here once they open this page.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="export-row" id="export-team-row" hidden>
+      <label for="export-employee">Employee <select id="export-employee"><option value="all">All employees</option></select></label>
+      <label for="export-month">Month <input type="month" id="export-month"></label>
+      <button class="btn primary" id="export-team" type="button">Export to Excel</button>
+      <span class="export-msg" id="export-team-msg" role="status"></span>
+    </div>
+    <div class="muted" style="font-size:0.85rem">Exports save one file per employee, named Name_Month. Records go back 62 days.</div>
+    <div class="roster-box" id="roster-box">
+      <h2>Staff names</h2>
+      <div class="muted" style="font-size:0.9rem">Add one name per line. Employees pick their name from this list, and a name that is taken disappears for everyone else.</div>
+      <textarea id="roster-input" style="min-height:80px" placeholder="Type one name per line"></textarea>
+      <div class="export-row">
+        <button class="btn primary" id="roster-add" type="button">Add names</button>
+        <span class="export-msg" id="roster-msg" role="status"></span>
+      </div>
+      <div id="roster-list"></div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var pad = function (n) { return String(n).padStart(2, "0"); };
+  var dkey = function (d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+  var fmtTime = function (iso) { return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); };
+  var fmtDur = function (ms) { var m = Math.max(0, Math.round(ms / 60000)); return Math.floor(m / 60) + "h " + pad(m % 60) + "m"; };
+  var fmtDay = function (key) {
+    return new Date(key + "T00:00:00").toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  };
+  function workedMs(doc, now) {
+    return (doc.sessions || []).reduce(function (t, s) {
+      return t + ((s.out ? Date.parse(s.out) : now) - Date.parse(s.in));
+    }, 0);
+  }
+  function hasOpen(doc) { return (doc.sessions || []).some(function (s) { return !s.out; }); }
+  function h(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  var state = {
+    db: null, user: null, uid: null, ready: false, canWrite: true, isManager: false,
+    myDays: [], remarkDirty: false, busy: false, myName: "", myRosterId: null, nameNote: "", roster: [], claims: {},
+    teamIds: [], teamDays: {}, teamSubs: {}, names: {}
+  };
+  var queue = Promise.resolve();
+
+  function showBanner(msg) {
+    var b = $("banner");
+    if (msg) { b.textContent = msg; b.hidden = false; } else { b.hidden = true; }
+  }
+
+  /* ---------- live clock ---------- */
+  function tick() {
+    var d = new Date();
+    $("now-time").textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    $("now-date").textContent = d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    renderWorked();
+  }
+
+  /* ---------- my day ---------- */
+  function openDoc() { return state.myDays.find(hasOpen) || null; }
+  function docFor(key) { return state.myDays.find(function (d) { return d.date === key; }) || null; }
+  function activeDate() { var o = openDoc(); return o ? o.date : dkey(new Date()); }
+
+  function renderWorked() {
+    var doc = docFor(dkey(new Date()));
+    var o = openDoc();
+    var ms = doc ? workedMs(doc, Date.now()) : 0;
+    if (o && o.date !== dkey(new Date())) ms += workedMs(o, Date.now());
+    $("worked").textContent = fmtDur(ms);
+  }
+
+  function renderMine() {
+    var o = openDoc();
+    var today = docFor(dkey(new Date()));
+    var pill = $("status");
+    var punch = $("punch");
+    if (!state.ready) {
+      pill.textContent = "Connecting…"; pill.className = "pill";
+    } else if (o) {
+      var open = o.sessions.find(function (s) { return !s.out; });
+      pill.textContent = "Working since " + fmtTime(open.in); pill.className = "pill working";
+    } else if (today && today.sessions.length) {
+      var last = today.sessions[today.sessions.length - 1];
+      pill.textContent = "Clocked out at " + fmtTime(last.out); pill.className = "pill";
+    } else {
+      pill.textContent = "Not clocked in"; pill.className = "pill";
+    }
+    punch.textContent = o ? "Clock out" : "Clock in";
+    punch.className = "punch" + (o ? " out" : "");
+    var can = state.ready && state.canWrite && !state.busy;
+    punch.disabled = !can;
+    $("remark").disabled = !(state.ready && state.canWrite);
+    $("save-remark").disabled = !can || !state.remarkDirty;
+    renderPicker();
+
+    var ad = activeDate();
+    $("remark-label").textContent = ad === dkey(new Date())
+      ? "What did you work on today?"
+      : "What did you work on " + fmtDay(ad) + "?";
+    if (!state.remarkDirty) {
+      var cur = docFor(ad);
+      $("remark").value = cur && cur.remark ? cur.remark : "";
+    }
+    renderWorked();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    var box = $("history");
+    box.textContent = "";
+    if (!state.myDays.length) {
+      box.appendChild(h("div", "empty", "Your clocked days will appear here after your first clock in."));
+      return;
+    }
+    state.myDays.slice(0, 31).forEach(function (d) {
+      var e = h("div", "entry");
+      var top = h("div", "entry-top");
+      top.appendChild(h("span", null, fmtDay(d.date)));
+      top.appendChild(h("span", "mono", fmtDur(workedMs(d, Date.now()))));
+      e.appendChild(top);
+      var times = (d.sessions || []).map(function (s) {
+        return fmtTime(s.in) + " – " + (s.out ? fmtTime(s.out) : "now");
+      }).join("   ");
+      e.appendChild(h("div", "entry-times", times));
+      var r = d.remark && d.remark.trim();
+      e.appendChild(h("div", "entry-remark" + (r ? "" : " none"), r || "No remark"));
+      box.appendChild(e);
+    });
+  }
+
+  function setRemarkMsg(text, isErr) {
+    var m = $("remark-msg");
+    m.textContent = text;
+    m.className = "remark-msg" + (isErr ? " err" : "");
+  }
+
+  function writeError(e) {
+    if (e && e.code === "invalid_argument") {
+      state.canWrite = false;
+      showBanner("You can view this page but not clock in. Ask the owner to share it with you as a Contributor.");
+    } else if (e && e.code === "quota_exceeded") {
+      showBanner("The time clock database is full. Tell the owner.");
+    } else {
+      showBanner("That did not save. Check your connection and try again.");
+    }
+    renderMine();
+  }
+
+  function saveDoc(key, mutate) {
+    var run = function () {
+      var base = docFor(key) || { date: key, sessions: [], remark: "" };
+      var next = mutate(JSON.parse(JSON.stringify(base)));
+      next.updatedAt = new Date().toISOString();
+      return state.db.doc("attendance/" + state.uid + "/days/" + key).set(next);
+    };
+    queue = queue.then(run, run);
+    return queue;
+  }
+
+  function onPunch() {
+    if (state.busy) return;
+    var o = openDoc();
+    var ta = $("remark");
+    var text = ta.value.trim();
+    if (!o && !state.myName) {
+      noteName("Choose your name from the list before you clock in.", true);
+      $("name-pick").focus();
+      return;
+    }
+    if (o && !text) {
+      setRemarkMsg("Write what you did today before you clock out.", true);
+      ta.focus();
+      return;
+    }
+    state.busy = true; renderMine();
+    var nowIso = new Date().toISOString();
+    var key = o ? o.date : dkey(new Date());
+    saveDoc(key, function (doc) {
+      if (o) {
+        var s = doc.sessions.find(function (x) { return !x.out; });
+        if (s) s.out = nowIso;
+      } else {
+        doc.sessions.push({ in: nowIso, out: null });
+      }
+      if (state.remarkDirty || o) doc.remark = ta.value;
+      return doc;
+    }).then(function () {
+      state.remarkDirty = false;
+      showBanner("");
+      setRemarkMsg(o ? "Clocked out. Remark saved." : "Clocked in. Add a remark any time today.", false);
+    }).catch(writeError).then(function () { state.busy = false; renderMine(); });
+  }
+
+  function setNameMsg(text, isErr) {
+    var m = $("name-msg");
+    m.textContent = text;
+    m.className = "export-msg" + (isErr ? " err" : "");
+  }
+
+  function noteName(text, isErr) { state.nameNote = text; setNameMsg(text, isErr); }
+
+  function renderPicker() {
+    var sel = $("name-pick");
+    var has = !!state.myName;
+    $("name-pick-row").hidden = has;
+    $("name-set-row").hidden = !has;
+    $("name-set").textContent = state.myName;
+    $("change-name").disabled = !(state.ready && state.canWrite);
+    if (has) return;
+    var cur = sel.value;
+    var avail = state.roster.filter(function (r) { var c = state.claims[r.id]; return !c || c === state.uid; });
+    sel.textContent = "";
+    var ph = h("option", null, "Choose your name…"); ph.value = ""; sel.appendChild(ph);
+    avail.forEach(function (r) { var o = h("option", null, r.name); o.value = r.id; sel.appendChild(o); });
+    if (avail.some(function (r) { return r.id === cur; })) sel.value = cur;
+    var can = state.ready && state.canWrite && avail.length > 0;
+    sel.disabled = !can;
+    $("save-name").disabled = !can || !sel.value;
+    if (state.nameNote || !state.ready) return;
+    setNameMsg(!state.roster.length ? "Your manager has not added staff names yet."
+      : !avail.length ? "Every name on the list is taken. Ask your manager."
+      : "Choose your name from the list. You only do this once.", false);
+  }
+
+  async function onSaveName() {
+    var rid = $("name-pick").value;
+    var item = state.roster.find(function (r) { return r.id === rid; });
+    if (!item || !state.canWrite) return;
+    $("save-name").disabled = true;
+    try {
+      var claim = state.db.doc("claims/" + rid);
+      var got = await claim.acquire({ holder: state.uid, ttlMs: 5000 });
+      if (!got.acquired) { noteName("Someone is picking that name right now. Try again.", true); renderPicker(); return; }
+      var snap = await claim.get();
+      var cd = snap.exists ? snap.data() : null;
+      if (cd && cd.uid && cd.uid !== state.uid) { noteName("That name was just taken. Choose another.", true); renderPicker(); return; }
+      await claim.set({ uid: state.uid, name: item.name });
+      await state.db.doc("employees/" + state.uid).set({ joinedAt: state.joinedAt || new Date().toISOString(), name: item.name, rosterId: rid });
+      state.myName = item.name; state.myRosterId = rid;
+      noteName("Name saved.", false);
+      renderMine();
+    } catch (e) { noteName("Could not save your name. Try again.", true); writeError(e); }
+  }
+
+  async function onChangeName() {
+    if (!state.canWrite) return;
+    try {
+      var rid = state.myRosterId;
+      if (rid && state.claims[rid] === state.uid) await state.db.doc("claims/" + rid).delete();
+      await state.db.doc("employees/" + state.uid).set({ joinedAt: state.joinedAt || new Date().toISOString(), name: "", rosterId: null });
+      state.nameNote = "";
+    } catch (e) { noteName("Could not change your name. Try again.", true); writeError(e); }
+  }
+
+  /* ---------- manager staff list ---------- */
+  function renderRoster() {
+    var box = $("roster-list");
+    box.textContent = "";
+    if (!state.roster.length) { box.appendChild(h("div", "empty", "No names yet. Add your staff above so they can pick their name.")); return; }
+    state.roster.forEach(function (r) {
+      var row = h("div", "roster-item");
+      row.appendChild(h("span", "roster-name", r.name));
+      var taken = !!state.claims[r.id];
+      row.appendChild(h("span", "pill" + (taken ? " working" : ""), taken ? "Taken" : "Free"));
+      var b = h("button", "btn", "Remove"); b.type = "button";
+      b.addEventListener("click", function () { removeName(r.id); });
+      row.appendChild(b);
+      box.appendChild(row);
+    });
+  }
+
+  function rosterMsg(text, isErr) { var m = $("roster-msg"); m.textContent = text; m.className = "export-msg" + (isErr ? " err" : ""); }
+
+  async function addNames() {
+    var ta = $("roster-input");
+    var have = state.roster.map(function (r) { return r.name.toLowerCase(); });
+    var seen = {};
+    var names = ta.value.split("\n").map(function (s) { return s.trim().replace(/\s+/g, " ").slice(0, 60); }).filter(function (s) {
+      var k = s.toLowerCase();
+      if (!s || have.indexOf(k) >= 0 || seen[k]) return false;
+      seen[k] = 1; return true;
+    });
+    if (!names.length) { rosterMsg("Type one name per line. Names already on the list are skipped.", true); return; }
+    $("roster-add").disabled = true;
+    try {
+      for (var i = 0; i < names.length; i++) await state.db.collection("roster").add({ name: names[i] });
+      ta.value = "";
+      rosterMsg("Added " + names.length + (names.length === 1 ? " name." : " names."), false);
+    } catch (e) { rosterMsg("Could not add the names. Try again.", true); }
+    $("roster-add").disabled = false;
+  }
+
+  async function removeName(id) {
+    try {
+      await state.db.doc("roster/" + id).delete();
+      if (state.claims[id]) await state.db.doc("claims/" + id).delete();
+    } catch (e) { rosterMsg("Could not remove that name. Try again.", true); }
+  }
+
+  function onSaveRemark() {
+    if (state.busy || !state.remarkDirty) return;
+    state.busy = true; renderMine();
+    var key = activeDate();
+    var val = $("remark").value;
+    saveDoc(key, function (doc) { doc.remark = val; return doc; })
+      .then(function () { state.remarkDirty = false; showBanner(""); setRemarkMsg("Remark saved.", false); })
+      .catch(writeError)
+      .then(function () { state.busy = false; renderMine(); });
+  }
+
+  /* ---------- team board ---------- */
+  var teamToken = 0;
+  async function renderTeam() {
+    var token = ++teamToken;
+    var sel = $("team-date").value || dkey(new Date());
+    var ids = state.teamIds.slice();
+    var ps = {};
+    try { ps = await state.user.profiles(ids); } catch (e) { ps = {}; }
+    if (token !== teamToken) return;
+    var rows = ids.map(function (id) {
+      var days = state.teamDays[id] || [];
+      var doc = days.find(function (d) { return d.date === sel; }) || null;
+      var open = days.find(hasOpen) || null;
+      var name = state.names[id] || (ps[id] && ps[id].name) || "Someone";
+      if (ps[id] && ps[id].isMe) name += " (you)";
+      return { id: id, name: name, doc: doc, open: open };
+    });
+    rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    fillExportEmployees(rows);
+    var body = $("team-body");
+    body.textContent = "";
+    var working = 0, out = 0, none = 0;
+    if (!rows.length) {
+      var tr0 = h("tr"); var td0 = h("td", "muted", "People show up here once they open this page.");
+      td0.colSpan = 6; tr0.appendChild(td0); body.appendChild(tr0);
+    }
+    rows.forEach(function (r) {
+      var tr = h("tr");
+      var status, cls;
+      if (r.open) { status = "Working"; cls = "pill working"; working++; }
+      else if (r.doc && r.doc.sessions.length) { status = "Clocked out"; cls = "pill"; out++; }
+      else { status = "Not in"; cls = "pill"; none++; }
+      tr.appendChild(h("td", null, r.name));
+      var st = h("td"); st.appendChild(h("span", cls, status)); tr.appendChild(st);
+      var first = r.doc && r.doc.sessions[0];
+      var lastS = r.doc && r.doc.sessions[r.doc.sessions.length - 1];
+      tr.appendChild(h("td", "num", first ? fmtTime(first.in) : "—"));
+      tr.appendChild(h("td", "num", lastS && lastS.out ? fmtTime(lastS.out) : "—"));
+      tr.appendChild(h("td", "num", r.doc ? fmtDur(workedMs(r.doc, Date.now())) : "—"));
+      var rem = r.doc && r.doc.remark && r.doc.remark.trim();
+      var rc = h("td", "remark-cell" + (rem ? "" : " muted"), rem || "—");
+      tr.appendChild(rc);
+      body.appendChild(tr);
+    });
+    $("team-summary").textContent = rows.length
+      ? working + " working · " + out + " clocked out · " + none + " not in"
+      : "No employees yet";
+  }
+
+  function subscribeTeam() {
+    state.db.collection("employees").onSnapshot(function (snap) {
+      state.teamIds = snap.docs.map(function (d) { return d.id; });
+      snap.docs.forEach(function (d) { state.names[d.id] = (d.data() || {}).name || ""; });
+      state.teamIds.forEach(function (id) {
+        if (state.teamSubs[id]) return;
+        state.teamSubs[id] = state.db.collection("attendance/" + id + "/days")
+          .orderBy("date", "desc").limit(62)
+          .onSnapshot(function (s) {
+            state.teamDays[id] = s.docs.map(function (d) { return d.data(); });
+            renderTeam();
+          }, function () {});
+      });
+      renderTeam();
+    }, function () { $("team-summary").textContent = "Could not load the team list."; });
+  }
+
+  /* ---------- excel export ---------- */
+  var HEADERS = ["Employee", "Date", "Clock in", "Clock out", "Hours worked", "Sessions", "Remark"];
+  var hm = function (iso) { var d = new Date(iso); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+
+  function exportRow(name, d) {
+    var s = d.sessions || [];
+    var first = s[0], last = s[s.length - 1];
+    return [
+      name,
+      d.date,
+      first ? hm(first.in) : "",
+      last && last.out ? hm(last.out) : "",
+      Math.round(workedMs(d, Date.now()) / 36000) / 100,
+      s.length,
+      d.remark ? d.remark.trim() : ""
+    ];
+  }
+
+  function monthName(ym) {
+    var p = ym.split("-");
+    return new Date(+p[0], +p[1] - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  }
+  function fileSafe(s) { return (s || "").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, "_") || "Employee"; }
+  function exportName(name, ym) { return fileSafe(name) + "_" + monthName(ym) + ".xlsx"; }
+  function inMonth(d, ym) { return typeof d.date === "string" && d.date.indexOf(ym) === 0; }
+
+  async function saveWorkbook(rows, filename, msgEl, quiet) {
+    function say(t, err) { msgEl.textContent = t; msgEl.className = "export-msg" + (err ? " err" : ""); }
+    if (!state.downloads || !window.XLSX) { say("Export is not available in this view.", true); return "error"; }
+    if (!rows.length) { if (!quiet) say("No records for that month.", true); return "empty"; }
+    try {
+      var ws = XLSX.utils.aoa_to_sheet([HEADERS].concat(rows));
+      ws["!cols"] = [{ wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 13 }, { wch: 9 }, { wch: 60 }];
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+      var buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      await state.downloads.save({ filename: filename, data: blob });
+      if (!quiet) say("Exported " + filename + ".", false);
+      return "saved";
+    } catch (e) {
+      if (e && e.code === "declined") { say("Export cancelled.", false); return "declined"; }
+      if (e && e.code === "rate_limited") say("Wait a moment, then try again.", true);
+      else say("Could not create the Excel file. Try again.", true);
+      return "error";
+    }
+  }
+
+  async function exportMine() {
+    var msg = $("export-mine-msg");
+    var ym = $("export-mine-month").value;
+    if (!ym) { msg.textContent = "Choose a month first."; msg.className = "export-msg err"; return; }
+    var me = await state.user.me();
+    var name = state.myName || me.name || "Me";
+    var days = state.myDays.filter(function (d) { return inMonth(d, ym); })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    var rows = days.map(function (d) { return exportRow(name, d); });
+    await saveWorkbook(rows, exportName(name, ym), msg);
+  }
+
+  function fillExportEmployees(rows) {
+    var sel = $("export-employee");
+    var cur = sel.value || "all";
+    sel.textContent = "";
+    var all = h("option", null, "All employees"); all.value = "all"; sel.appendChild(all);
+    rows.forEach(function (r) { var o = h("option", null, r.name); o.value = r.id; sel.appendChild(o); });
+    sel.value = rows.some(function (r) { return r.id === cur; }) ? cur : "all";
+  }
+
+  async function exportTeam() {
+    var msg = $("export-team-msg");
+    var ym = $("export-month").value;
+    function say(t, err) { msg.textContent = t; msg.className = "export-msg" + (err ? " err" : ""); }
+    if (!ym) { say("Choose a month first.", true); return; }
+    var pick = $("export-employee").value || "all";
+    var ids = pick === "all" ? state.teamIds.slice() : [pick];
+    var ps = {};
+    try { ps = await state.user.profiles(state.teamIds); } catch (e) { ps = {}; }
+    $("export-team").disabled = true;
+    var saved = 0, skipped = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      var name = state.names[id] || (ps[id] && ps[id].name) || "Someone";
+      var days = (state.teamDays[id] || []).filter(function (d) { return inMonth(d, ym); })
+        .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      if (!days.length) { skipped++; continue; }
+      say("Exporting " + name + "…", false);
+      var r = await saveWorkbook(days.map(function (d) { return exportRow(name, d); }), exportName(name, ym), msg, true);
+      if (r === "saved") saved++;
+      else { $("export-team").disabled = false; if (r === "declined") say("Export stopped after " + saved + (saved === 1 ? " file." : " files."), false); return; }
+    }
+    $("export-team").disabled = false;
+    if (!saved) say("No records for that month.", true);
+    else say("Exported " + saved + (saved === 1 ? " file" : " files") + (skipped ? ". " + skipped + " had no records." : "."), false);
+  }
+
+  /* ---------- tabs ---------- */
+  function selectTab(which) {
+    var team = which === "team";
+    $("tab-mine").setAttribute("aria-selected", String(!team));
+    $("tab-team").setAttribute("aria-selected", String(team));
+    $("view-mine").hidden = team;
+    $("view-team").hidden = !team;
+    if (team) renderTeam();
+  }
+
+  /* ---------- boot ---------- */
+  async function boot() {
+    $("punch").addEventListener("click", onPunch);
+    $("save-remark").addEventListener("click", onSaveRemark);
+    $("remark").addEventListener("input", function () {
+      state.remarkDirty = true;
+      setRemarkMsg($("remark").value.trim() ? "Unsaved changes." : "Required before you clock out.", false);
+      $("save-remark").disabled = state.busy || !state.canWrite;
+    });
+    $("name-pick").addEventListener("change", function () { state.nameNote = ""; renderPicker(); });
+    $("save-name").addEventListener("click", onSaveName);
+    $("change-name").addEventListener("click", onChangeName);
+    $("roster-add").addEventListener("click", addNames);
+    $("tab-mine").addEventListener("click", function () { selectTab("mine"); });
+    $("tab-team").addEventListener("click", function () { selectTab("team"); });
+    $("team-date").value = dkey(new Date());
+    $("team-date").addEventListener("change", renderTeam);
+    tick();
+    setInterval(tick, 1000);
+    renderMine();
+
+    var c = window.claude;
+    if (!c || !c.use) { showBanner("The time clock needs to be opened on claude.ai."); return; }
+    var db = await c.use("db");
+    var user = await c.use("user");
+    if (!db || !user) { showBanner("Sign in to claude.ai to use the time clock."); return; }
+    var uid = await user.id();
+    if (!uid) { showBanner("Your account has no identity on this page, so the clock cannot record you."); return; }
+    state.db = db; state.user = user; state.uid = uid;
+    state.downloads = await c.use("downloads");
+    if (state.downloads && window.XLSX) {
+      $("export-mine-row").hidden = false;
+      $("export-mine").addEventListener("click", exportMine);
+      $("export-team").addEventListener("click", exportTeam);
+      $("export-team-row").hidden = false;
+      var t = new Date();
+      var ymNow = t.getFullYear() + "-" + pad(t.getMonth() + 1);
+      $("export-month").value = ymNow;
+      $("export-mine-month").value = ymNow;
+    }
+    var cw = await user.can("data.write");
+    var me = await user.me();
+    state.isManager = me.canEdit;
+    if (cw === false && !state.isManager) {
+      state.canWrite = false;
+      showBanner("You can view this page but not clock in. Ask the owner to share it with you as a Contributor.");
+    }
+
+    state.db.collection("attendance/" + uid + "/days").orderBy("date", "desc").limit(62).onSnapshot(function (snap) {
+      state.myDays = snap.docs.map(function (d) { return d.data(); });
+      state.ready = true;
+      renderMine();
+    }, function () { showBanner("Could not load your records. Reload the page."); });
+
+    if (state.canWrite) {
+      try {
+        var reg = db.doc("employees/" + uid);
+        var snap = await reg.get();
+        if (!snap.exists) await reg.set({ joinedAt: new Date().toISOString() });
+      } catch (e) { /* registration is retried on next visit */ }
+    }
+
+    state.db.doc("employees/" + uid).onSnapshot(function (s) {
+      var d = (s.exists && s.data()) || {};
+      state.myName = d.name || "";
+      state.joinedAt = d.joinedAt || null;
+      state.myRosterId = d.rosterId || null;
+      renderMine();
+    }, function () {});
+
+    state.db.collection("roster").onSnapshot(function (snap) {
+      state.roster = snap.docs.map(function (d) { return { id: d.id, name: (d.data() || {}).name || "" }; })
+        .filter(function (r) { return r.name; })
+        .sort(function (a, b) { return a.name.localeCompare(b.name); });
+      renderPicker(); renderRoster();
+    }, function () {});
+    state.db.collection("claims").onSnapshot(function (snap) {
+      state.claims = {};
+      snap.docs.forEach(function (d) { state.claims[d.id] = (d.data() || {}).uid || null; });
+      renderPicker(); renderRoster();
+    }, function () {});
+
+    if (state.isManager) {
+      $("tabs").hidden = false;
+      subscribeTeam();
+    }
+  }
+  boot();
+})();
+</script>
+
+</body></html>
